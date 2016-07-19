@@ -19,7 +19,7 @@ Usage: java -cp SparkJobClient.jar com.microsoft.spark.client.SparkClientMain
 --cluster-password [clusterPassword] 
 [--batch-mode (default)|--interactive-mode]
 
-**Run Spark job (and exit):**
+**Run Spark job:**
 
 Usage: java -cp SparkJobClient.jar com.microsoft.spark.client.SparkClientMain
 --run --applicationName [applicationName] 
