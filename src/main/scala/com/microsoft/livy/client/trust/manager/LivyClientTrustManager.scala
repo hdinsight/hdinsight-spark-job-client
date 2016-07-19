@@ -39,10 +39,7 @@ class LivyClientTrustManager extends X509TrustManager {
 
 class LivyClientHostnameVerifier extends HostnameVerifier {
 
-  override def verify(hostname: String, sslSession: SSLSession): Boolean = {
-
-    return true
-  }
+  override def verify(hostname: String, sslSession: SSLSession): Boolean = true
 }
 
 object LivyClientTrustProvider {
@@ -51,12 +48,8 @@ object LivyClientTrustProvider {
 
     //Trusts any certificate for use in test mode only
 
-    if(testMode == true) {
-
-      return getOpenHttpClient(credentialsProvider)
-    }
-
-    return HttpClientBuilder.create().setDefaultCredentialsProvider(credentialsProvider).build()
+    if(testMode) getOpenHttpClient(credentialsProvider)
+    else HttpClientBuilder.create().setDefaultCredentialsProvider(credentialsProvider).build()
   }
 
 
@@ -72,9 +65,9 @@ object LivyClientTrustProvider {
     val socketFactory: SSLConnectionSocketFactory  = new SSLConnectionSocketFactory(sslContext, openHostNameVerifier)
 
     val httpClient: CloseableHttpClient = HttpClientBuilder.create().setSSLSocketFactory(socketFactory)
-      .setDefaultCredentialsProvider(credentialsProvider).build();
+      .setDefaultCredentialsProvider(credentialsProvider).build()
 
-    return httpClient;
+    httpClient
   }
 }
 
