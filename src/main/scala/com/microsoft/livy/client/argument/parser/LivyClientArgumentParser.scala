@@ -17,35 +17,12 @@
 
 package com.microsoft.livy.client.argument.parser
 
-object LivyClientArgumentKeys extends Enumeration {
-  val ListJobs: String = "listJobs"
-  val SubmitJob: String = "submitJob"
-  val SubmitAndMonitorJob: String = "submitAndMonitorJob"
-  val MonitorJob: String = "monitorJob"
-  val KillJob: String = "killJob"
-  val JobId: String = "jobId"
-  val ApplicationName: String = "applicationName"
-  val ApplicationJAR: String = "applicationJAR"
-  val ApplicationClass: String = "applicationClass"
-  val ApplicationArguments: String = "applicationArguments"
-  val ExecutorFiles: String = "executorFiles"
-  val ClasspathJARS: String = "classpathJARS"
-  val ExecutorCount: String = "executorCount"
-  val PerExecutorCoreCount: String = "perExecutorCoreCount"
-  val PerExecutorMemoryInGB: String = "perExecutorMemoryInGB"
-  val DriverMemoryInGB: String = "driverMemoryInGB"
-  val ClusterFQDN: String = "clusterFQDN"
-  val ClusterUsername: String = "clusterUsername"
-  val ClusterPassword: String = "clusterPassword"
-  val YarnQueue: String = "yarnQueue"
-  val BatchMode: String = "batchMode"
-  val InteractiveMode: String = "interactiveMode"
-  val TestMode: String = "testMode"
-}
+import com.microsoft.livy.client.common._
 
 object LivyClientArgumentParser {
 
   type ArgumentMap = Map[Symbol, Any]
+  type ClientOptions = Map[Enumeration, Any]
 
   def usageExample(): Unit = {
 
@@ -68,19 +45,22 @@ object LivyClientArgumentParser {
     val clusterPassword: String = "<ClusterPassword>"
 
     println()
-    println(s"Usage: --submit|--submit-and-monitor --applicationName $applicationName" +
+    println(s"Usage: --submit|--run --applicationName $applicationName" +
       s" --application-jar $applicationJAR --application-class $applicationClass" +
       s" --application-arguments  $applicationArguments --jars-in-classpath $classPathJARS" +
       s" --files-in-executor-working-directory $executorFiles --executor-count $executorCount" +
       s" --per-executor-core-count $perExecutorCoreCount --per-executor-memory-in-gb $perExecutorMemoryInGB" +
       s" --driver-memory-in-gb $driverMemoryInGB --cluster-fqdn $clusterFQDN --cluster-username $clusterUsername" +
-      s" --cluster-password $clusterPassword --batch-mode|--interactive-mode")
+      s" --cluster-password $clusterPassword [--batch-mode]|--interactive-mode")
+    println()
+    println(s"Usage: --monitor|--monitor --job-id $jobId --cluster-fqdn $clusterFQDN --cluster-username $clusterUsername" +
+      s" --cluster-password $clusterPassword [--batch-mode]|--interactive-mode")
     println()
     println(s"Usage: --monitor|--kill --job-id $jobId --cluster-fqdn $clusterFQDN --cluster-username $clusterUsername" +
-      s" --cluster-password $clusterPassword --batch-mode|--interactive-mode")
+      s" --cluster-password $clusterPassword [--batch-mode]|--interactive-mode")
     println()
     println(s"Usage: --list --cluster-fqdn $clusterFQDN --cluster-username $clusterUsername" +
-      s" --cluster-password $clusterPassword --batch-mode|--interactive-mode")
+      s" --cluster-password $clusterPassword [--batch-mode]|--interactive-mode")
     println()
   }
 
@@ -92,8 +72,8 @@ object LivyClientArgumentParser {
         parseArguments(argumentMap ++ Map(Symbol(LivyClientArgumentKeys.ListJobs) -> true), tail)
       case "--submit" :: tail =>
         parseArguments(argumentMap ++ Map(Symbol(LivyClientArgumentKeys.SubmitJob) -> true), tail)
-      case "--submit-and-monitor" :: tail =>
-        parseArguments(argumentMap ++ Map(Symbol(LivyClientArgumentKeys.SubmitAndMonitorJob) -> true), tail)
+      case "--run" :: tail =>
+        parseArguments(argumentMap ++ Map(Symbol(LivyClientArgumentKeys.RunJob) -> true), tail)
       case "--monitor" :: tail =>
         parseArguments(argumentMap ++ Map(Symbol(LivyClientArgumentKeys.MonitorJob) -> true), tail)
       case "--kill" :: tail =>
@@ -146,16 +126,9 @@ object LivyClientArgumentParser {
     }
   }
 
-  def verifyUpdateArguments(argumentMap : ArgumentMap): Unit = {
+  def verifyUpdateArguments(argumentMap : ArgumentMap): ClientOptions = {
 
-    //Remove this when interactive job is supported
-
-    if (argumentMap.contains(Symbol(LivyClientArgumentKeys.InteractiveMode))) {
-      println()
-      println("Interactive job is not supported yet.")
-      println()
-      sys.exit(1)
-    }
+    var clientOptions : ClientOptions = Map()
 
     //Verify cluster and user details have been specified
 
@@ -168,19 +141,13 @@ object LivyClientArgumentParser {
     var modeCount: Int = 0
 
     if (argumentMap.contains(Symbol(LivyClientArgumentKeys.BatchMode))) {
+      clientOptions = clientOptions ++ Map(LivyClientMode -> LivyClientMode.Batch)
       modeCount += 1
     }
 
     if (argumentMap.contains(Symbol(LivyClientArgumentKeys.InteractiveMode))) {
+      clientOptions = clientOptions ++ Map(LivyClientMode -> LivyClientMode.Interactive)
       modeCount += 1
-    }
-
-    if (modeCount == 0) {
-      println()
-      println("Only one job mode must be specified.")
-      println()
-      usageExample()
-      sys.exit(1)
     }
 
     if (modeCount > 1) {
@@ -190,12 +157,14 @@ object LivyClientArgumentParser {
       usageExample()
       sys.exit()
     }
+    else if (modeCount == 0) clientOptions = clientOptions ++ Map(LivyClientMode -> LivyClientMode.Batch)
 
     //Verify only one of the job actions has been specified
 
     var actionCount: Int = 0
 
     if (argumentMap.contains(Symbol(LivyClientArgumentKeys.ListJobs))) {
+      clientOptions = clientOptions ++ Map(LivyClientAction -> LivyClientAction.List)
       actionCount += 1
     }
 
@@ -206,32 +175,36 @@ object LivyClientArgumentParser {
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.PerExecutorCoreCount)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.PerExecutorMemoryInGB)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.DriverMemoryInGB)))
+      clientOptions = clientOptions ++ Map(LivyClientAction -> LivyClientAction.Submit)
       actionCount += 1
     }
 
-    if (argumentMap.contains(Symbol(LivyClientArgumentKeys.SubmitAndMonitorJob))) {
+    if (argumentMap.contains(Symbol(LivyClientArgumentKeys.RunJob))) {
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.ApplicationJAR)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.ApplicationClass)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.ExecutorCount)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.PerExecutorCoreCount)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.PerExecutorMemoryInGB)))
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.DriverMemoryInGB)))
+      clientOptions = clientOptions ++ Map(LivyClientAction -> LivyClientAction.Run)
       actionCount += 1
     }
 
     if (argumentMap.contains(Symbol(LivyClientArgumentKeys.MonitorJob))) {
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.JobId)))
+      clientOptions = clientOptions ++ Map(LivyClientAction -> LivyClientAction.Monitor)
       actionCount += 1
     }
 
     if (argumentMap.contains(Symbol(LivyClientArgumentKeys.KillJob))) {
       assert(argumentMap.contains(Symbol(LivyClientArgumentKeys.JobId)))
+      clientOptions = clientOptions ++ Map(LivyClientAction -> LivyClientAction.Kill)
       actionCount += 1
     }
 
     if (actionCount == 0) {
       println()
-      println("Only one job action must be specified.")
+      println("At least one job action must be specified.")
       println()
       usageExample()
       sys.exit(1)
@@ -244,5 +217,7 @@ object LivyClientArgumentParser {
       usageExample()
       sys.exit()
     }
+
+    clientOptions
   }
 }
